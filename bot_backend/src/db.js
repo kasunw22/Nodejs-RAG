@@ -88,8 +88,18 @@ export class VectorDB {
             sleep(10);
         }
 
-        // await this.createDb();
     }
+
+    // static async init(){
+    //     const vectorDb = new VectorDB();
+    //     await vectorDb.createDb();
+    //     return vectorDb;
+    // };
+
+    async init(){
+        await this.createDb();
+        return this;
+    };
 
     async getSourceDocuments(dataSources) {
         if (Array.isArray(dataSources)) {
@@ -102,11 +112,14 @@ export class VectorDB {
 
         if (stats.isDirectory()) {
             const files = await fs.promises.readdir(dataSources);
-            return files.map(file => path.join(dataSources, file));
+            // return files.map(file => path.join(dataSources, file));
+            return await Promise.all(
+                files.map(async (file) => path.join(dataSources, file))
+            );
         }
 
         if (stats.isFile()) {
-            const content = await fs.readFile(dataSources, "utf-8");
+            const content = await fs.promises.readFile(dataSources, "utf-8");
             return content
                 .split("\n")
                 .map(line => line.trim())
@@ -182,7 +195,7 @@ export class VectorDB {
     async createDb(dbPath=null, dataPath=null) {
         dbPath = dbPath ?? this.dbPath;
         dataPath = dataPath ?? this.dataPath;
-
+        
         if (fs.existsSync(dbPath)){
             return await this.readDb(dbPath);
         } 
@@ -307,18 +320,19 @@ import dotenv from "dotenv";
 import dotenvExpand from 'dotenv-expand';
 
 dotenvExpand.expand(dotenv.config());
-const db = new VectorDB({
+
+const db = await new VectorDB({
     dbPath: process.env.DB_PATH,
     dataPath: process.env.DB_DATA_PATH,
-});
+}).init();
 
-await db.createDb();
+// await db.createDb();
 
 const query = "How many pieces are there?";
 
 const retriever = await db.getRetriever()
 console.log(await retriever.invoke(query));
 
-// console.log(await db.queryDb(query, undefined, undefined, true, false));
+// // console.log(await db.queryDb(query, undefined, undefined, true, false));
 
 // db.clearDb(process.env.DB_PATH);
