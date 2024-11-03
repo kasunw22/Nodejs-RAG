@@ -83,10 +83,10 @@ export class VectorDB {
             chunkOverlap: 20,
         });
 
-        while (!this.embeddings.isReady()) {
-            console.info("[INFO] Embedding service is not ready...")
-            sleep(10);
-        }
+        // while (!await this.embeddings.isReady()) {
+        //     console.info("[INFO] Embedding service is not ready...")
+        //     sleep(10);
+        // }
 
     }
 
@@ -97,6 +97,10 @@ export class VectorDB {
     // };
 
     async init(){
+        while (!await this.embeddings.isReady()) {
+            console.info("[INFO] Embedding service is not ready...")
+            sleep(10);
+        }
         await this.createDb();
         return this;
     };
@@ -316,23 +320,23 @@ export class VectorDB {
 };
 
 
-import dotenv from "dotenv";
-import dotenvExpand from 'dotenv-expand';
+// import dotenv from "dotenv";
+// import dotenvExpand from 'dotenv-expand';
 
-dotenvExpand.expand(dotenv.config());
+// dotenvExpand.expand(dotenv.config());
 
-const db = await new VectorDB({
-    dbPath: process.env.DB_PATH,
-    dataPath: process.env.DB_DATA_PATH,
-}).init();
+// const db = await new VectorDB({
+//     dbPath: process.env.DB_PATH,
+//     dataPath: process.env.DB_DATA_PATH,
+// }).init();
 
-// await db.createDb();
+// // await db.createDb();
 
-const query = "How many pieces are there?";
+// const query = "How many pieces are there?";
 
-const retriever = await db.getRetriever()
-console.log(await retriever.invoke(query));
+// const retriever = await db.getRetriever()
+// console.log(await retriever.invoke(query));
 
-// // console.log(await db.queryDb(query, undefined, undefined, true, false));
+// // // console.log(await db.queryDb(query, undefined, undefined, true, false));
 
-// db.clearDb(process.env.DB_PATH);
+// // db.clearDb(process.env.DB_PATH);

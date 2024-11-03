@@ -7,6 +7,7 @@ import {
     parseUrl,
     queryDb,
     searchDb,
+    clearDb,
     chat,
     clearChat,
     getStatus
@@ -31,6 +32,9 @@ router.post("/db/query", queryDb);
 
 // search db
 router.post("/db/search", searchDb);
+
+// clear db
+router.post("/db/clear", clearDb);
 
 // chat with RAG
 router.post("/api/chat", chat);

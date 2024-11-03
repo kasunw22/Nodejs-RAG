@@ -11,6 +11,7 @@ import { createRetrievalChain } from "langchain/chains/retrieval";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 import fs from "fs/promises";
 import path from "path";
+import { chat } from "../controllers/serviceControllers";
 
 
 export class GrapApp {
@@ -62,13 +63,19 @@ export class GrapApp {
         this.maxIdleTime = fields?.maxIdleTime ?? this.maxIdleTime;
         this.llm = new CustomLLM();
 
-        this.ragChainArray = this.createRagChainArray(process.env.DB_BASE);
+        // this.ragChainArray = this.createRagChainArray(process.env.DB_BASE);
         this.ragChain = null;
 
-        this.freeChatChain = this.buildFreeChatChain();
+        // this.freeChatChain = this.buildFreeChatChain();
         
         this.chatHistory = {}
 
+    };
+
+    async init(){
+        this.ragChainArray = await this.createRagChainArray(process.env.DB_BASE);
+        this.freeChatChain = await this.buildFreeChatChain();
+        return this;
     };
 
     async createRagChainArray(dbBase) {
@@ -143,5 +150,112 @@ export class GrapApp {
         };
     };
 
-    
+    async chekAndCreateChatEntry(sessionId) {
+        if (!(sessionId in this.chatHistory)) {
+            this.chatHistory[sessionId] = {updatedTime: Date.now(), chat: []};
+        };
+    }
+
+    async updateChatHistory(sessionId, newChatArray) {
+        this.chatHistory[sessionId][chat].push(...newChatArray);
+        this.chatHistory[sessionId][updatedTime] = Date.now();
+    }
+
+    async doFreeChat(enQuery, sessionId) {
+        await this.chekAndCreateChatEntry(sessionId);
+        await this.truncateChatHistory(sessionId);
+        
+        const res = await this.freeChatChain.invoke({
+            input: enQuery,
+            chat_history: this.chatHistory[sessionId][chat]
+        });
+
+        const answer = res[text];
+        const newChatArray = [
+            new HumanMessage(enQuery),
+            new AIMessage(answer)
+        ]
+        
+        await this.updateChatHistory(sessionId, newChatArray);
+
+        return {
+            messages: [answer],
+            sessionId: sessionId
+        };
+    };
+
+    async doRagStandAlone(enQuery, sessionId) {
+        await this.chekAndCreateChatEntry(sessionId);
+        await this.truncateChatHistory(sessionId);
+
+        const res = await this.ragChain.invoke({
+            input: enQuery,
+            chat_history: this.chatHistory[sessionId][chat]
+        });
+        const answer = res[answer];
+        const newChatArray = [
+            new HumanMessage(enQuery),
+            new AIMessage(answer)
+        ]
+        
+        await this.updateChatHistory(sessionId, newChatArray);
+
+        return {
+            messages: [answer],
+            sessionId: sessionId
+        };
+    };
+
+    async clearHistoryCache() {
+        const entries = Object.entries(this.chatHistory);
+        const nStart = entries.length
+        const filteredEntries = await Promise.all(
+            entries.map(async ([key, value]) => {
+                const shouldKeep = (Date.now() - value[updatedTime]) > this.maxIdleTime;
+                return shouldKeep ? [key, value] : null;
+            })
+        );
+        const nNew = filteredEntries.length
+        this.chatHistory = Object.fromEntries(filteredEntries.filter(entry => entry != null));
+        console.info(`[INFO] Removed ${nStart - nNew} cached chats...`)
+    };
+
+    async addToRagChainArray(dbPath, force=false) {
+        key = path.normalize(dbPath);
+        if (force || !(key in this.ragChainArray)) {
+            this.ragChainArray[key] = await this.buildRagChain(key);
+        };
+    };
+
+    async chat(fields) {
+        const enQuery = fields.enQuery;
+        const sessionId = fields.sessionId;
+        this.maxHistory = fields?.maxHistory ?? this.maxHistory;
+        const dbPath = fields?.dbPath ?? process.env.DB_PATH;
+        const freeChatMode = fields?.freeChatMode ?? false;
+        let answer;
+
+        if (freeChatMode) {
+            answer = await this.doFreeChat(enQuery, sessionId);
+        } else {
+            this.ragChain = await this.getRagChain(dbPath);
+            answer = await this.doRagStandAlone(enQuery, sessionId);
+        }
+
+        this.clearHistoryCache();
+
+        return {messages: answe[messages]}
+    };
+
+    async clearHistory(sessionId) {
+        if (sessionId in this.chatHistory) {
+            delete this.chatHistory[sessionId];
+            return true;
+        }
+        return false
+    };
+
+    async isReady() {
+        return await this.llm.isReady();
+    };
 };
