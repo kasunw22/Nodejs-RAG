@@ -1,4 +1,4 @@
-import './config.js';  // Import entire config
+import './config/config.js';  // Import entire config
 console.log(process.env.STATUS_URL);
 
 import express from "express";

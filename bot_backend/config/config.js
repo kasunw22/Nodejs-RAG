@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 
 // Load env vars before any other imports
 const result = dotenv.config({
-  path: resolve(__dirname, './.env')
+  path: resolve(__dirname, '../.env')
 });
 
 dotenvExpand.expand(result);
