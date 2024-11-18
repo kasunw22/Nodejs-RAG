@@ -1,15 +1,12 @@
+import './config.js';  // Import entire config
+console.log(process.env.STATUS_URL);
+
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
-import dotenvExpand from 'dotenv-expand';
 
 import router from "./routes/services.js";
 
-// dotenv.config();
-dotenvExpand.expand(dotenv.config());
-
-console.log(process.env.TTS_URL);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

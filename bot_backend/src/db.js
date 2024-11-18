@@ -1,4 +1,5 @@
 import { CustomEmbeddings } from "./encoder.js";
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
 import { RecursiveCharacterTextSplitter} from "langchain/text_splitter";
 import { Chroma } from "@langchain/community/vectorstores/chroma";
 import { FaissStore } from "@langchain/community/vectorstores/faiss";
@@ -78,6 +79,9 @@ export class VectorDB {
         this.dataPath = fields.dataPath;
         this.dbPath = fields.dbPath;
         this.embeddings = new CustomEmbeddings();
+        // this.embeddings = new HuggingFaceTransformersEmbeddings({
+        //     model: "Xenova/bge-small-en-v1.5",
+        // });
         this.rSplitter = new RecursiveCharacterTextSplitter({
             chunkSize: 1000,
             chunkOverlap: 20,
@@ -99,7 +103,7 @@ export class VectorDB {
     async init(){
         while (!await this.embeddings.isReady()) {
             console.info("[INFO] Embedding service is not ready...")
-            sleep(10);
+            sleep(1000);
         }
         await this.createDb();
         return this;
@@ -272,11 +276,12 @@ export class VectorDB {
         let docs;
         let content;
         if (returnScore) {
-            if (returnRelevanceSocre) {
-                docs = await vectorDb.maxMarginalRelevanceSearch(query, {k: k});
-            } else {
-                docs = await vectorDb.similaritySearchWithScore(query, k, searchKwargs);
-            };
+            // if (returnRelevanceSocre) {
+            //     docs = await vectorDb.similaritySearchWithScore(query, {k: k, searchType: "mmr"});
+            // } else {
+            //     docs = await vectorDb.similaritySearchWithScore(query, k, searchKwargs);
+            // };
+            docs = await vectorDb.similaritySearchWithScore(query, k, searchKwargs);
             content = await Promise.all(docs.map((doc) => {
                 return [doc[1], doc[0].pageContent];
             }));
@@ -294,7 +299,7 @@ export class VectorDB {
         dbPath = dbPath ?? this.dbPath;
 
         const vectorDb = await this.readDb(dbPath);
-        return await vectorDb.getDocstore(searchQuery);
+        return vectorDb.getDocstore(searchQuery);
     };
 
     clearDb(dbPath) {
@@ -337,6 +342,6 @@ export class VectorDB {
 // const retriever = await db.getRetriever()
 // console.log(await retriever.invoke(query));
 
-// // // console.log(await db.queryDb(query, undefined, undefined, true, false));
+// // console.log(await db.queryDb(query, undefined, undefined, true, false));
 
 // // db.clearDb(process.env.DB_PATH);

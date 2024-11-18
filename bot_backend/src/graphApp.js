@@ -1,5 +1,5 @@
-import { VectorDB } from "./db";
-import { CustomLLM } from "./llm";
+import { VectorDB } from "./db.js";
+import { CustomLLM } from "./llm.js";
 // Prompt templates
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 // Messages
@@ -9,9 +9,13 @@ import { MessagesPlaceholder } from "@langchain/core/prompts";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
+import { RunnableSequence, RunnablePassthrough } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+
 import fs from "fs/promises";
 import path from "path";
-import { chat } from "../controllers/serviceControllers";
+
+import { InMemoryStorage, RedisStorage } from "../utils/memory.js";
 
 
 export class GrapApp {
@@ -63,12 +67,11 @@ export class GrapApp {
         this.maxIdleTime = fields?.maxIdleTime ?? this.maxIdleTime;
         this.llm = new CustomLLM();
 
-        // this.ragChainArray = this.createRagChainArray(process.env.DB_BASE);
         this.ragChain = null;
 
-        // this.freeChatChain = this.buildFreeChatChain();
-        
-        this.chatHistory = {}
+        this.storage = new RedisStorage({
+            ttl: this.maxIdleTime
+        });
 
     };
 
@@ -94,7 +97,7 @@ export class GrapApp {
             allDbPaths.map(async dbPath => [path.normalize(dbPath), await this.buildRagChain(path.normalize(dbPath))])
         );
 
-        return Object.fromEntries(entries);
+        return Object.fromEntries(ragArray);
     };
 
     async buildRagChain(dbPath) {
@@ -105,34 +108,57 @@ export class GrapApp {
         const retriever = await vectorDb.getRetriever();
         
         const contextualizedQPrompt = ChatPromptTemplate.fromMessages([
-          ["system", GrapApp.contextualizedQSystemPrompt],
+          ["system", this.contextualizedQSystemPrompt],
           new MessagesPlaceholder("chat_history"),
           ["human", "{input}"],
         ]);
+        
         const qaPrompt = ChatPromptTemplate.fromMessages([
-            ["system", GrapApp.qaSystemPrompt],
+            ["system", this.qaSystemPrompt],
             new MessagesPlaceholder("chat_history"),
             ["human", "{input}"],
         ]);
-
-        const historyAwareRetriever = createHistoryAwareRetriever({
-            llm: llm,
-            retriever: retriever,
+    
+        const historyAwareRetriever = await createHistoryAwareRetriever({
+            llm: this.llm,
+            retriever,
             rephrasePrompt: contextualizedQPrompt,
         });
-        const qaChain = await createStuffDocumentsChain({
-            llm: llm,
-            prompt: qaPrompt
-        });
-        return await createRetrievalChain({
-            combineDocsChain: qaChain,
-            retriever: historyAwareRetriever
-        });
-    };
+    
+        // Create the chain for combining documents
+        const combineDocsChain = RunnableSequence.from([
+            {
+                context: (input) => input.documents, // check the below runnable sequence
+                chat_history: (input) => input.chat_history,
+                input: (input) => input.question, // check the below runnable sequence
+            },
+            qaPrompt,
+            this.llm,
+        ]);
+    
+        // Create the retrieval chain
+        const retrievalChain = RunnableSequence.from([
+            {   
+                // First step: prepare input
+                input: (input) => input.input,
+                chat_history: (input) => input.chat_history,
+            },
+            // Second step: retrieve documents and prepare inputs to next stage
+            {
+                documents: historyAwareRetriever,
+                chat_history: (input) => input.chat_history,
+                question: (input) => input.input,
+            },
+            // Final step: combine documents
+            combineDocsChain,
+        ]);
+    
+        return retrievalChain;
+    }
 
     async buildFreeChatChain() {
         const freeChatPrompt = ChatPromptTemplate.fromMessages([
-            ["system", GrapApp.freeChatPrompt],
+            ["system", this.freeChatSystemPrompt],
             new MessagesPlaceholder("chat_history"),
             ["human", "{input}"],
         ]);
@@ -145,87 +171,112 @@ export class GrapApp {
     };
 
     async truncateChatHistory(sessionId) {
-        if (this.maxHistory) {
-            this.chatHistory[sessionId][chat] = this.chatHistory[sessionId][chat].slice(-this.maxHistory);
-        };
-    };
+        try {
+            const chatData = await this.storage.load(sessionId);
+            
+            if (chatData && this.maxHistory && chatData.chat.length > this.maxHistory) {
+                chatData.chat = chatData.chat.slice(-this.maxHistory);
+                await this.storage.save(sessionId, chatData);
+            }
+            
+            return chatData;
+        } catch (error) {
+            console.error(`Error in truncateChatHistory for session ${sessionId}:`, error);
+            throw error;
+        }
+    }
 
-    async chekAndCreateChatEntry(sessionId) {
-        if (!(sessionId in this.chatHistory)) {
-            this.chatHistory[sessionId] = {updatedTime: Date.now(), chat: []};
-        };
+    async checkAndCreateChatEntry(sessionId) {
+        try {
+            let chatData = await this.storage.load(sessionId);
+            
+            if (!chatData) {
+                chatData = {
+                    updatedTime: Date.now(),
+                    chat: []
+                };
+                await this.storage.save(sessionId, chatData);
+            }
+            
+            return chatData;
+        } catch (error) {
+            console.error(`Error in checkAndCreateChatEntry for session ${sessionId}:`, error);
+            throw error;
+        }
     }
 
     async updateChatHistory(sessionId, newChatArray) {
-        this.chatHistory[sessionId][chat].push(...newChatArray);
-        this.chatHistory[sessionId][updatedTime] = Date.now();
+        try {
+            const chatData = await this.storage.load(sessionId);
+            
+            if (chatData) {
+                chatData.chat.push(...newChatArray);
+                chatData.updatedTime = Date.now();
+                await this.storage.save(sessionId, chatData);
+            }
+            
+            return chatData;
+        } catch (error) {
+            console.error(`Error in updateChatHistory for session ${sessionId}:`, error);
+            throw error;
+        }
     }
 
     async doFreeChat(enQuery, sessionId) {
-        await this.chekAndCreateChatEntry(sessionId);
-        await this.truncateChatHistory(sessionId);
-        
-        const res = await this.freeChatChain.invoke({
-            input: enQuery,
-            chat_history: this.chatHistory[sessionId][chat]
-        });
+        try {
+            let chatData = await this.checkAndCreateChatEntry(sessionId);
+            chatData = await this.truncateChatHistory(sessionId);
+            
+            const res = await this.freeChatChain.invoke({
+                input: enQuery,
+                chat_history: chatData.chat
+            });
 
-        const answer = res[text];
-        const newChatArray = [
-            new HumanMessage(enQuery),
-            new AIMessage(answer)
-        ]
-        
-        await this.updateChatHistory(sessionId, newChatArray);
+            const answer = typeof res === 'string' ? res : res.text || res.content || res.toString();
+            
+            const newChatArray = [
+                new HumanMessage(enQuery),
+                new AIMessage(answer)
+            ];
+            
+            await this.updateChatHistory(sessionId, newChatArray);
 
-        return {
-            messages: [answer],
-            sessionId: sessionId
-        };
-    };
+            return {
+                messages: [answer],
+                sessionId: sessionId
+            };
+        } catch (error) {
+            console.error(`Error in doFreeChat for session ${sessionId}:`, error);
+            throw error;
+        }
+    }
 
     async doRagStandAlone(enQuery, sessionId) {
-        await this.chekAndCreateChatEntry(sessionId);
-        await this.truncateChatHistory(sessionId);
+        try {
+            let chatData = await this.checkAndCreateChatEntry(sessionId);
+            chatData = await this.truncateChatHistory(sessionId);
 
-        const res = await this.ragChain.invoke({
-            input: enQuery,
-            chat_history: this.chatHistory[sessionId][chat]
-        });
-        const answer = res[answer];
-        const newChatArray = [
-            new HumanMessage(enQuery),
-            new AIMessage(answer)
-        ]
-        
-        await this.updateChatHistory(sessionId, newChatArray);
+            const res = await this.ragChain.invoke({
+                input: enQuery,
+                chat_history: chatData.chat
+            });
 
-        return {
-            messages: [answer],
-            sessionId: sessionId
-        };
-    };
+            const newChatArray = [
+                new HumanMessage(enQuery),
+                new AIMessage(res)
+            ];
+            
+            await this.updateChatHistory(sessionId, newChatArray);
 
-    async clearHistoryCache() {
-        const entries = Object.entries(this.chatHistory);
-        const nStart = entries.length
-        const filteredEntries = await Promise.all(
-            entries.map(async ([key, value]) => {
-                const shouldKeep = (Date.now() - value[updatedTime]) > this.maxIdleTime;
-                return shouldKeep ? [key, value] : null;
-            })
-        );
-        const nNew = filteredEntries.length
-        this.chatHistory = Object.fromEntries(filteredEntries.filter(entry => entry != null));
-        console.info(`[INFO] Removed ${nStart - nNew} cached chats...`)
-    };
-
-    async addToRagChainArray(dbPath, force=false) {
-        key = path.normalize(dbPath);
-        if (force || !(key in this.ragChainArray)) {
-            this.ragChainArray[key] = await this.buildRagChain(key);
-        };
-    };
+            return {
+                messages: [res],
+                sessionId: sessionId
+            };
+        } catch (error) {
+            console.error(`Error in doRagStandAlone for session ${sessionId}:`, error);
+            throw error;
+        }
+    }
 
     async chat(fields) {
         const enQuery = fields.enQuery;
@@ -242,20 +293,116 @@ export class GrapApp {
             answer = await this.doRagStandAlone(enQuery, sessionId);
         }
 
-        this.clearHistoryCache();
+        // this.clearHistoryCache();
 
-        return {messages: answe[messages]}
+        return {messages: answer.messages}
     };
 
     async clearHistory(sessionId) {
-        if (sessionId in this.chatHistory) {
-            delete this.chatHistory[sessionId];
+        try {
+            await this.storage.delete(sessionId);
             return true;
+        } catch (error) {
+            console.error(`Error clearing history for session ${sessionId}:`, error);
+            return false;
         }
-        return false
-    };
+    }
+
+    async close() {
+        await this.storage.disconnect();
+    }
 
     async isReady() {
         return await this.llm.isReady();
     };
 };
+
+/*
+import dotenv from "dotenv";
+import dotenvExpand from 'dotenv-expand';
+
+dotenvExpand.expand(dotenv.config());
+
+
+const graphApp = await new GrapApp({
+    maxHistory: 4,
+    maxIdleTime: 300
+}).init();
+
+
+const vectorDb = await new VectorDB({
+    dataPath: process.env.DB_DATA_PATH,
+    dbPath: process.env.DB_PATH,
+}).init();
+const retriever = await vectorDb.getRetriever();
+
+const contextualizedQPrompt = ChatPromptTemplate.fromMessages([
+  ["system", graphApp.contextualizedQSystemPrompt],
+  new MessagesPlaceholder("chat_history"),
+  ["human", "{input}"],
+]);
+
+const qaPrompt = ChatPromptTemplate.fromMessages([
+    ["system", graphApp.qaSystemPrompt],
+    new MessagesPlaceholder("chat_history"),
+    ["human", "{input}"],
+]);
+
+const historyAwareRetriever = await createHistoryAwareRetriever({
+    llm: graphApp.llm,
+    retriever,
+    rephrasePrompt: contextualizedQPrompt,
+});
+
+// Create the chain for combining documents
+const combineDocsChain = RunnableSequence.from([
+    {
+        context: (input) => input.documents,
+        chat_history: (input) => input.chat_history,
+        input: (input) => input.question,
+    },
+    qaPrompt,
+    graphApp.llm,
+]);
+
+// Create the retrieval chain
+const retrievalChain = RunnableSequence.from([
+    {
+        input: (input) => input.input,
+        chat_history: (input) => input.chat_history,
+    },
+    {
+        documents: historyAwareRetriever,
+        chat_history: (input) => input.chat_history,
+        question: (input) => input.input,
+    },
+    combineDocsChain,
+]);
+
+
+// check retriever
+// const query = "How many pieces are there?";
+// const query = "What is my Name?";
+// const query = "What does LCEL stands for?"
+const query = "What does it mean?"
+
+const chatHistory = [
+    new HumanMessage("Hello"),
+    new AIMessage("How can I help you today?"),
+    new HumanMessage("My name is Kasun"),
+    new AIMessage("Hi KAsun how can I help you today?"),
+    new HumanMessage("What is LCEL?"),
+    new AIMessage("LCEL means LangChain Expression Language")
+]
+
+// Invoke the retrievalChain
+try {
+    const response = await retrievalChain.invoke({
+        input: query,
+        chat_history: chatHistory
+});
+    console.log("Response:", response);
+} catch (error) {
+    console.error("Error:", error);
+}
+*/

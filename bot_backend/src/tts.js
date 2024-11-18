@@ -35,7 +35,10 @@ export class TTS {
   
         const data = await response.json();
         // console.log(data)
-        return [data.sample_rate, data.audio_response];
+        return {
+            sampleRate: data.sample_rate, 
+            audioResponse: data.audio_response
+        };
     }
 
     async isReady() {

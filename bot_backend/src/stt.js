@@ -35,7 +35,10 @@ export class STT {
   
         const data = await response.json();
         
-        return [data.transcription, data.language];
+        return {
+            transcription: data.transcription, 
+            language: data.language
+        };
     }
 
     async isReady() {
