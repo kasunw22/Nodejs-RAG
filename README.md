@@ -46,19 +46,22 @@ You can access the services as follws
 1. Start the compute service
 ```
 cd compute_service
-node main.js
+npm i
+npm start
 ```
 
 2. Start the bot backend
 ```
 cd bot_backend
-node main.js
+npm i
+npm start
 ```
 
 3. Start the frontend app
 ```
 cd bot_frontend
-node main.js
+npm i
+npm start
 ```
 
 ## Dockerization
