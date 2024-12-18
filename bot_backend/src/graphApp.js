@@ -170,6 +170,13 @@ export class GrapApp {
         return this.ragChainArray[path.normalize(dbPath)]
     };
 
+    async addToRagChainArray(dbPath, force) {
+        const normPath = path.normalize(dbPath)
+        if (force || !(key in this.ragChainArray))
+            console.info(`[INFO] Adding RAG chain from ${dbPath}...`)
+            this.ragChainArray[normPath] = await this.buildRagChain(normPath)
+    }
+
     async truncateChatHistory(sessionId) {
         try {
             const chatData = await this.storage.load(sessionId);
