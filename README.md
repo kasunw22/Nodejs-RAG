@@ -73,11 +73,29 @@ This option will be availble in the future
 
 - [ ] Complete Bot Backend
     - [x] Basic RAG Flow
+    - [x] Session Management
+    - [x] RAG mode and LLM-only chat mode
+    - [x] Handle both text and voice input and output
     - [ ] Add knowledge to vector db throug API
 - [ ] Complete Compute Service
     - [ ] LLM Service
+        - [ ] Huggingface
+        - [ ] Ollama
+        - [ ] Llama-cpp
+        - [ ] Openai
     - [ ] Embedding Service
+        - [ ] Huggingface
+        - [ ] Sentence Transformers
+        - [ ] Openai
     - [ ] Translation Service
+        - [ ] Huggingface
+        - [ ] Google Translate API
     - [ ] ASR Service
+        - [ ] Huggingface
+        - [ ] Openai-whisper
     - [ ] TTS Service
+        - [ ] Huggingface
+        - [ ] CoquiTTS
 - [ ] Complete Frontend APP
+    - [ ] Basic chat interface
+    - [ ] Add knowledge to RAG (i.e. File Upload, URL fetch)
