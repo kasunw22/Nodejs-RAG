@@ -1,5 +1,5 @@
 # NodeJs Rag Services
-This is a complete end-to-end RAG solution using NodeJs.
+This is a complete end-to-end RAG solution using NodeJs. This is the NodeJs version of [this](https://github.com/xphoenix-ai/rag-services) Python project.
 
 ## System Overview
 ![Model](img/overall_system.jpeg)
@@ -35,15 +35,18 @@ Client frontend App that the user interacts with the bot/system.
 ## Setup
 
 The 3 services should be run as 3 separate services.
-- Compute Service is independent from others
-- Bot Backend is depend upon the Computre Service
-- Bot Frontend is depend upon the Bot Backend
+- Compute Service is independent of others
+- Bot Backend is depending upon the Compute Service
+- Bot Frontend is depending upon the Bot Backend
 
-You can access the services as follws
+You can access the services as follows.
+
+**Note:**
+ - You can use the corresponding Python services of [this](https://github.com/xphoenix-ai/rag-services) project for yet to complete services.
 
 ### Steps to Start
 
-1. Start the compute service
+1. Start the compute service (to be added)
 ```
 cd compute_service
 npm i
@@ -57,7 +60,7 @@ npm i
 npm start
 ```
 
-3. Start the frontend app
+3. Start the frontend app (to be added)
 ```
 cd bot_frontend
 npm i
@@ -76,7 +79,7 @@ This option will be availble in the future
     - [x] Session Management
     - [x] RAG mode and LLM-only chat mode
     - [x] Handle both text and voice input and output
-    - [ ] Add knowledge to vector db throug API
+    - [ ] Add knowledge to vector db through API
 - [ ] Complete Compute Service
     - [ ] LLM Service
         - [ ] Huggingface
